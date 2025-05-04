@@ -18,10 +18,11 @@ local Shop = Window:CreateTab("Shop", 4483362458)
 local SeedLabel = Shop:CreateLabel("Seeds Purchased:")
 local GearLabel = Shop:CreateLabel("Gears Purchased:")
 local EggLabel = Shop:CreateLabel("Eggs Purchased:")
+local MoneyLabel = Shop:CreateLabel("Money Earned: 0")
 
 local Status = AutoTab:CreateLabel("Status: Stopped")
 
-local SeedCounts, GearCounts, EggCounts = {}, {}, {}
+local SeedCounts, GearCounts, EggCounts, MoneyEarned = {}, {}, {}, 0
 
 local function updateLabels()
 	local seedText, gearText, eggText = {}, {}, {}
@@ -53,7 +54,7 @@ local Eggs = workspace.NPCS["Pet Stand"]:WaitForChild("EggLocations")
 local GameEvents = game:GetService("ReplicatedStorage"):WaitForChild("GameEvents")
 local EggModels = game.ReplicatedStorage.Assets.Models.EggModels
 
-local AllSeeds, AllGears, AllEggs = {}, {}, {}
+local AllSeeds, AllGears, AllEggs, AllMutations = {}, {}, {}, {"Frozen", "Shocked", "Wet", "Rainbow", "Gold", "Chilled"}
 local Selling = false
 
 for _, seed in pairs(SeedShop.Frame.ScrollingFrame:GetChildren()) do
@@ -71,6 +72,15 @@ for _, egg in pairs(EggModels:GetChildren()) do
 		table.insert(AllEggs, egg.Name)
 	end
 end
+
+local StartOffMoney = Player.leaderstats:WaitForChild("Sheckles").Value
+local MoneyEarned = 0
+
+Player.leaderstats:WaitForChild("Sheckles").Changed:Connect(function(newValue)
+    local currentMoney = Player.leaderstats.Sheckles.Value
+    MoneyEarned = currentMoney - StartOffMoney
+    MoneyLabel:Set("Money Earned: " ..MoneyEarned)
+end)
 
 _G.AutoBuySeed, _G.AutoBuyGear, _G.AutoBuyEgg = false, false, false
 _G.wantedgear, _G.wantedseed, _G.wantedegg = {}, {}, {}
@@ -152,7 +162,7 @@ end
 task.spawn(StartAutoBuy)
 
 -- Harvest & Sell Section
-_G.IgnoreSeed, _G.Harvest, _G.AutoSell, _G.Farm = {}, false, false, nil
+_G.IgnoreSeed, _G.IgnoreMutation, _G.Harvest, _G.AutoSell, _G.AutoPlace, _G.Farm = {}, {}, false, false, nil
 
 local function removeCollision()
 	if not _G.Farm then return end
@@ -219,11 +229,13 @@ local function Alternate()
         end)
 
 		character.HumanoidRootPart.Anchored = false
+		character.Humanoid.PlatformStand = false
 
 		if math.random(1,3) == 3 then
-            character.HumanoidRootPart.CFrame = CFrame.new(destination + Vector3.new(0, 25, 0))
+            character.HumanoidRootPart.CFrame = CFrame.new(destination + Vector3.new(0, math.random(25,30), 0))
+			character.Humanoid.PlatformStand = true
 			character.HumanoidRootPart.Anchored = true
-			task.delay(0.5, function()
+			task.delay(0.3, function()
 			    Moving = false
 			end)
 		else
@@ -250,28 +262,76 @@ local function Alternate()
 end
 
 local function StartHarvest()
-	Player.Character.HumanoidRootPart.CFrame = _G.Farm.Parent.Spawn_Point.CFrame
+    Player.Character.HumanoidRootPart.CFrame = _G.Farm.Parent.Spawn_Point.CFrame
 
     while _G.Harvest do
         if _G.Farm and not Selling then
             task.spawn(removeCollision)
 
             for _, plant in pairs(_G.Farm["Plants_Physical"]:GetChildren()) do
-                if not table.find(_G.IgnoreSeed, plant.Name) then
-                    if not _G.Harvest or Selling then break end
-                    for _, prox in pairs(plant:GetDescendants()) do
-                        if prox:IsA("ProximityPrompt") then
-                            if not _G.Harvest or Selling then break end
-                            Status:Set("Status: Picking Up Seeds!")
-							task.spawn(Alternate)
-                            fireproximityprompt(prox)
+                if table.find(_G.IgnoreSeed, plant.Name) then
+                    continue
+                end
+
+                if not _G.Harvest or Selling then
+                    break
+                end
+
+                local skipDueToAttribute = false
+
+				if not plant:FindFirstChild("Fruits") then
+                    if plant:FindFirstChild("Variant") then
+					    if table.find(_G.IgnoreMutation, plant:FindFirstChild("Variant").Value) then
+						    continue
+						end
+					end
+
+                    for name, value in pairs(plant:GetAttributes()) do
+                        if table.find(_G.IgnoreMutation, name) and value == true then
+                            skipDueToAttribute = true
+                            break
                         end
+                    end
+				end
+
+                if skipDueToAttribute then
+                    continue
+                end
+
+                for _, descendant in pairs(plant:GetDescendants()) do
+                    local parent = descendant.Parent
+
+                    local parentVariant = parent:FindFirstChild("Variant")
+                    if parentVariant and table.find(_G.IgnoreMutation, parentVariant.Value) then
+                        continue
+                    end
+
+                    local skipChild = false
+                    for name, value in pairs(parent:GetAttributes()) do
+                        if table.find(_G.IgnoreMutation, name) and value == true then
+                            skipChild = true
+                            break
+                        end
+                    end
+                    if skipChild then
+                        continue
+                    end
+
+                    if descendant:IsA("ProximityPrompt") then
+                        if not _G.Harvest or Selling then
+                            break
+                        end
+                        Status:Set("Status: Picking Up Seeds!")
+                        task.spawn(Alternate)
+                        fireproximityprompt(descendant)
                     end
                 end
             end
         end
         task.wait(3)
     end
+    Player.Character.HumanoidRootPart.Anchored = false
+	Player.Character.Humanoid.PlatformStand = false
     Status:Set("Status: Stopped")
 end
 
@@ -280,15 +340,16 @@ local function AutoSell()
 		if #Player.Backpack:GetChildren() >= 200 and not Selling then
 			Selling = true
             Status:Set("Status: Selling")
+			Player.Character.Humanoid.PlatformStand = false
 		    Player.Character.HumanoidRootPart.Anchored = false
             Player.Character.HumanoidRootPart.CFrame = CFrame.new(61.579361, 3, 0.426799864)
-			task.wait()
+			task.wait(.1)
 			Player.Character.Humanoid:MoveTo(Vector3.new(65, 3, 1))
 			task.wait(.2)
             game:GetService("ReplicatedStorage"):WaitForChild("GameEvents"):WaitForChild("Sell_Inventory"):FireServer()
 			task.wait(3)
 			Player.Character.HumanoidRootPart.CFrame = _G.Farm.Parent.Spawn_Point.CFrame
-			task.wait(2)
+			task.wait(1.3)
 			Selling = false
 		end
 		task.wait(1)
@@ -353,7 +414,14 @@ AutoTab:CreateToggle({
 		if Value then task.spawn(StartHarvest) end
 	end
 })
-
+AutoTab:CreateDropdown({
+	Name = "Ignored Mutations",
+	Options = AllMutations,
+	MultipleOptions = true,
+	CurrentOption = {},
+	Flag = "IgnoredMutationsDropdown",
+	Callback = function(Selected) _G.IgnoreMutation = Selected end
+})
 AutoTab:CreateDropdown({
 	Name = "Ignored Crops",
 	Options = AllSeeds,
@@ -362,7 +430,6 @@ AutoTab:CreateDropdown({
 	Flag = "IgnoredCropsDropdown",
 	Callback = function(Selected) _G.IgnoreSeed = Selected end
 })
-
 AutoTab:CreateToggle({
 	Name = "Auto Sell",
 	CurrentValue = false,
