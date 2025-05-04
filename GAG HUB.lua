@@ -2,7 +2,7 @@ local Rayfield = loadstring(game:HttpGet("https://sirius.menu/rayfield"))()
 
 local Window = Rayfield:CreateWindow({
 	Name = "PORN HUB",
-	LoadingTitle = "Loading...",
+	LoadingTitle = "PORN HUB",
 	LoadingSubtitle = "by Handsome Toxin :wink:",
 	ConfigurationSaving = {
 		Enabled = true,
@@ -174,6 +174,8 @@ end
 
 local Spots = {}
 local canPlantParts = {}
+local spotIndex = 1
+
 if _G.Farm and _G.Farm:FindFirstChild("Plant_Locations") then
     for _, descendant in ipairs(_G.Farm.Plant_Locations:GetDescendants()) do
         if descendant:IsA("BasePart") and descendant.Name == "Can_Plant" then
@@ -184,13 +186,15 @@ end
 
 local offsetList = {
     Vector3.new(0, 0, 0),
-    Vector3.new(0, 20, 0),
-    Vector3.new(0, 20, 25),
-    Vector3.new(0, 20, -25),
+    Vector3.new(0, 0, 0),
+    Vector3.new(0, 0, 25),
+    Vector3.new(0, 0, -25),
     Vector3.new(0, 0, 25),
     Vector3.new(0, 0, -25),
 }
 
+local Moving = false
+local Checking = false
 local index = 1
 for _, part in ipairs(canPlantParts) do
     for _, offset in ipairs(offsetList) do
@@ -200,18 +204,49 @@ for _, part in ipairs(canPlantParts) do
 end
 
 local function Alternate()
-    local spotIndex = 1
-    if Player.Character and Player.Character:FindFirstChild("HumanoidRootPart") and Spots[spotIndex] and not Selling then
-        Player.Character.HumanoidRootPart.CFrame = Spots[spotIndex]
-    end
-    spotIndex += 1
-    if spotIndex > #Spots then
-        spotIndex = 1 
+    local character = Player.Character
+    if character and character:FindFirstChild("Humanoid") and character:FindFirstChild("HumanoidRootPart") and not Moving and Spots[spotIndex] and not Selling then
+        local humanoid = character.Humanoid
+        local destination = Spots[spotIndex].Position
+        local finished = false
+		Moving = true
+
+        local connection
+        connection = humanoid.MoveToFinished:Connect(function(reached)
+            finished = true
+			Moving = false
+            if connection then
+                connection:Disconnect()
+            end
+        end)
+
+        humanoid:MoveTo(destination)
+
+        task.spawn(function()
+		    if Checking then return end
+			Checking = true
+            while humanoid and humanoid.Health > 0 and Checking do
+				if not _G.Harvest then
+					break
+				end
+				humanoid:ChangeState(Enum.HumanoidStateType.Jumping)
+                if finished then
+					task.wait(0.5)
+				else
+				    task.wait(0.4)
+				end
+            end
+        end)
+
+        spotIndex += 1
+        if spotIndex > #Spots then
+            spotIndex = 1 
+        end
     end
 end
 
 local function StartHarvest()
-    Player.Character.HumanoidRootPart.Anchored = true
+	Player.Character.HumanoidRootPart.CFrame = _G.Farm.Parent.Spawn_Point.CFrame
 
     while _G.Harvest do
         if _G.Farm and not Selling then
@@ -223,19 +258,16 @@ local function StartHarvest()
                     for _, prox in pairs(plant:GetDescendants()) do
                         if prox:IsA("ProximityPrompt") then
                             if not _G.Harvest or Selling then break end
-                            Status:Set("Status: Picking Up " .. plant.Name)
-							Alternate()
-							task.wait(.2)
+                            Status:Set("Status: Picking Up Seeds!")
+							task.spawn(Alternate)
                             fireproximityprompt(prox)
                         end
                     end
                 end
             end
         end
-
         task.wait(5)
     end
-    Player.Character.HumanoidRootPart.Anchored = false
     Status:Set("Status: Stopped")
 end
 
@@ -244,20 +276,14 @@ local function AutoSell()
 		if #Player.Backpack:GetChildren() >= 200 and not Selling then
 			Selling = true
             Status:Set("Status: Selling")
-            task.wait(.3)
-			for _, tool in pairs(Player.Backpack:GetChildren()) do
-				if tool:GetAttribute("ITEM_TYPE") == "Holdable" and not tool:GetAttribute("Favorite") then
-					tool.Parent = Player.Character
-				end
-			end
-			task.wait()
             Player.Character.HumanoidRootPart.CFrame = CFrame.new(61.579361, 3, 0.426799864)
-			Player.Character.Humanoid:MoveTo(CFrame.new(61.579361, 3, 0.426799864))
-            Status:Set("Status: Selling")
-			game:GetService("ReplicatedStorage").GameEvents:WaitForChild("Sell_Item"):FireServer()
-			task.wait(3)
+			task.wait()
+			Player.Character.Humanoid:MoveTo(Vector3.new(65, 3, 1))
+			task.wait(.2)
+            game:GetService("ReplicatedStorage"):WaitForChild("GameEvents"):WaitForChild("Sell_Inventory"):FireServer()
+			task.wait(2)
 			Selling = false
-			Player.Character.Humanoid:UnequipTools()
+			Player.Character.HumanoidRootPart.CFrame = _G.Farm.Parent.Spawn_Point.CFrame
 		end
 		task.wait(1)
 	end
