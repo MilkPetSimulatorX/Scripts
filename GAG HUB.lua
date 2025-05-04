@@ -162,7 +162,7 @@ end
 task.spawn(StartAutoBuy)
 
 -- Harvest & Sell Section
-_G.IgnoreSeed, _G.IgnoreMutation, _G.Harvest, _G.AutoSell, _G.AutoPlace, _G.Farm = {}, {}, false, false, nil
+_G.IgnoreSeed, _G.IgnoreMutation, _G.IgnoreWeight, _G.Harvest, _G.AutoSell, _G.AutoPlace, _G.Farm = {}, {}, "None", false, false, nil
 
 local function removeCollision()
 	if not _G.Farm then return end
@@ -280,12 +280,14 @@ local function StartHarvest()
                 local skipDueToAttribute = false
 
 				if not plant:FindFirstChild("Fruits") then
+				    if _G.IgnoreWeight ~= "None" and plant.Weight.Value >= _G.IgnoreWeight then
+					    continue
+					end
                     if plant:FindFirstChild("Variant") then
 					    if table.find(_G.IgnoreMutation, plant:FindFirstChild("Variant").Value) then
 						    continue
 						end
 					end
-
                     for name, value in pairs(plant:GetAttributes()) do
                         if table.find(_G.IgnoreMutation, name) and value == true then
                             skipDueToAttribute = true
@@ -305,6 +307,12 @@ local function StartHarvest()
                     if parentVariant and table.find(_G.IgnoreMutation, parentVariant.Value) then
                         continue
                     end
+
+					if parent:FindFirstChild("Weight") and _G.IgnoreWeight ~= "None" then
+					    if parent:FindFirstChild("Weight").Value >= _G.IgnoreWeight then
+						    continue
+						end
+					end
 
                     local skipChild = false
                     for name, value in pairs(parent:GetAttributes()) do
@@ -429,6 +437,21 @@ AutoTab:CreateDropdown({
 	CurrentOption = {},
 	Flag = "IgnoredCropsDropdown",
 	Callback = function(Selected) _G.IgnoreSeed = Selected end
+})
+local WeightSlider = AutoTab:CreateSlider({
+   Name = "Ignore Weight Scale",
+   Range = {0, 100},
+   Increment = 0.1,
+   Suffix = "Scale",
+   CurrentValue = 0,
+   Flag = "WeightValue", 
+   Callback = function(Value)
+        if Value == 0 then
+		    _G.IgnoreWeight = "None"
+		else
+		    _G.IgnoreWeight = tonumber(Value)
+		end
+   end,
 })
 AutoTab:CreateToggle({
 	Name = "Auto Sell",
