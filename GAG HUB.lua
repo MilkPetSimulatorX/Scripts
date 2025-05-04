@@ -220,7 +220,11 @@ local function Alternate()
             end
         end)
 
-        humanoid:MoveTo(destination)
+		if math.random(1,5) == 5 then
+		    character.HumanoidRootPart.CFrame = CFrame.new(destination * Vector3.new(0,25,0))
+		else
+		    humanoid:MoveTo(destination)
+		end
 
         task.spawn(function()
 		    if Checking then return end
@@ -230,11 +234,7 @@ local function Alternate()
 					break
 				end
 				humanoid:ChangeState(Enum.HumanoidStateType.Jumping)
-                if finished then
-					task.wait(0.5)
-				else
-				    task.wait(0.4)
-				end
+                task.wait(0.6)
             end
         end)
 
