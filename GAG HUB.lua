@@ -6,7 +6,7 @@ local Window = Rayfield:CreateWindow({
 	LoadingSubtitle = "by Handsome Toxin :wink:",
 	ConfigurationSaving = {
 		Enabled = true,
-		FolderName = nil,
+		FolderName = "GAG",
 		FileName = "PORN HUB"
 	},
 })
@@ -208,20 +208,24 @@ local function Alternate()
     if character and character:FindFirstChild("Humanoid") and character:FindFirstChild("HumanoidRootPart") and not Moving and Spots[spotIndex] and not Selling then
         local humanoid = character.Humanoid
         local destination = Spots[spotIndex].Position
-        local finished = false
 		Moving = true
 
         local connection
         connection = humanoid.MoveToFinished:Connect(function(reached)
-            finished = true
-			Moving = false
+		    Moving = false
             if connection then
                 connection:Disconnect()
             end
         end)
 
-		if math.random(1,5) == 5 then
-		    character.HumanoidRootPart.CFrame = CFrame.new(destination * Vector3.new(0,25,0))
+		character.HumanoidRootPart.Anchored = false
+
+		if math.random(1,3) == 3 then
+            character.HumanoidRootPart.CFrame = CFrame.new(destination + Vector3.new(0, 25, 0))
+			character.HumanoidRootPart.Anchored = true
+			task.delay(0.5, function()
+			    Moving = false
+			end)
 		else
 		    humanoid:MoveTo(destination)
 		end
@@ -234,7 +238,7 @@ local function Alternate()
 					break
 				end
 				humanoid:ChangeState(Enum.HumanoidStateType.Jumping)
-                task.wait(0.6)
+                task.wait(0.7)
             end
         end)
 
@@ -266,7 +270,7 @@ local function StartHarvest()
                 end
             end
         end
-        task.wait(5)
+        task.wait(3)
     end
     Status:Set("Status: Stopped")
 end
@@ -276,14 +280,16 @@ local function AutoSell()
 		if #Player.Backpack:GetChildren() >= 200 and not Selling then
 			Selling = true
             Status:Set("Status: Selling")
+		    Player.Character.HumanoidRootPart.Anchored = false
             Player.Character.HumanoidRootPart.CFrame = CFrame.new(61.579361, 3, 0.426799864)
 			task.wait()
 			Player.Character.Humanoid:MoveTo(Vector3.new(65, 3, 1))
 			task.wait(.2)
             game:GetService("ReplicatedStorage"):WaitForChild("GameEvents"):WaitForChild("Sell_Inventory"):FireServer()
+			task.wait(3)
+			Player.Character.HumanoidRootPart.CFrame = _G.Farm.Parent.Spawn_Point.CFrame
 			task.wait(2)
 			Selling = false
-			Player.Character.HumanoidRootPart.CFrame = _G.Farm.Parent.Spawn_Point.CFrame
 		end
 		task.wait(1)
 	end
