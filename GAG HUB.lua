@@ -120,6 +120,35 @@ local function split(str, sep)
 	end
 	return result
 end
+local request = http and http.request or syn and syn.request or http_request
+
+if not request then
+    return warn("❌ Your executor does not support http requests.")
+end
+
+local webhookUrl = "https://discord.com/api/webhooks/1368872860730261578/hVQzqdDLt0EL35AEOy-t5X8ngGPQrnInXk_fwiBPeZRf64IkJy4NqpcNpo3OlL7Gfmxj" 
+
+local function sendWebhookMessage(message, username)
+    local payload = {
+        ["content"] = message,
+        ["username"] = username or "GrowAGardenNotif"
+    }
+
+    local response = request({
+        Url = webhookUrl,
+        Method = "POST",
+        Headers = {
+            ["Content-Type"] = "application/json"
+        },
+        Body = game:GetService("HttpService"):JSONEncode(payload)
+    })
+
+    if response.Success then
+        print("✅ Webhook sent!")
+    else
+        warn("❌ Webhook failed to send:", response.StatusCode, response.Body)
+    end
+end
 
 local weatherString = workspace:GetAttribute("AllWeather")
 local weatherOptions = split(weatherString, ",")
@@ -135,119 +164,6 @@ Player.leaderstats.Sheckles.Changed:Connect(function()
     end
     StartOffMoney = currentMoney
 end)
-local function CancelPlanting()
-    if PlantedObject then
-        local prevObject = PlantedObject
-        PlantedObject = nil
-        if Player.Character:FindFirstChildOfClass("Humanoid") then
-            Player.Character:FindFirstChildOfClass("Humanoid"):UnequipTools()
-        end
-        TrowelRemote:InvokeServer("Cancel", SelectedSeed, prevObject)
-        for _, part in DisabledParts do
-            part.CanCollide = true
-            part.CanQuery = true
-        end
-    end
-end
-local function RaycastIgnoreShovel(mousePosition)
-    local ray = Camera:ViewportPointToRay(mousePosition.X, mousePosition.Y)
-    local params = RaycastParams.new()
-    params.FilterType = Enum.RaycastFilterType.Exclude
-    params.FilterDescendantsInstances = { game:GetService("CollectionService"):GetTagged("ShovelIgnore") }
-    return workspace:Raycast(ray.Origin, ray.Direction * 500, params)
-end
-local function RaycastPlantLocations(mousePosition)
-    local ray = Camera:ViewportPointToRay(mousePosition.X, mousePosition.Y)
-    local params = RaycastParams.new()
-    params.FilterType = Enum.RaycastFilterType.Include
-    params.FilterDescendantsInstances = { GetFarm(Player).Important.Plant_Locations:GetChildren() }
-    return workspace:Raycast(ray.Origin, ray.Direction * 500, params)
-end
-_G.TrowelCon = RunService.RenderStepped:Connect(function()
-    if _G.FreeTrowel and _G.FreeTrowel.Parent == Player.Character then
-        local mousePos = UIS:GetMouseLocation()
-        if PlantedObject then
-            local rayResult = RaycastPlantLocations(mousePos)
-            if rayResult and rayResult.Position then
-                PlantedObject:PivotTo(CFrame.new(rayResult.Position) * CFrame.new(0, 3, 0) * PlantedObjectCFrame.Rotation)
-            else
-                PlantedObject:PivotTo(PlantedObjectCFrame)
-            end
-        end
-    else
-        if PlantedObject then
-            CancelPlanting()
-        end
-        return
-    end
-end)
-local function IsValidPlantTarget(target)
-    local farmModel = GetFarm(Player).Important
-    if farmModel then
-        if target:IsDescendantOf(farmModel) then
-            return target:FindFirstChild("Grow")
-                and target:FindFirstChild("Fruits")
-                and target:FindFirstChild("Fruit_Spawn")
-                and target.Parent.Name ~= "Fruits"
-                and target:FindFirstChild("ADD_DATA") or false
-        else
-            return false
-        end
-    else
-        return false
-    end
-end
-local function UseTrowel()
-    if _G.FreeTrowel and _G.FreeTrowel.Parent == Player.Character then
-        local mousePos = UIS:GetMouseLocation()
-        if PlantedObject then
-            local rayResult = RaycastPlantLocations(mousePos)
-            if rayResult then
-                local plantCheckParams = RaycastParams.new()
-                plantCheckParams.FilterType = Enum.RaycastFilterType.Include
-                plantCheckParams.FilterDescendantsInstances = { GetFarm(Player).Important.Plants_Physical:GetChildren() }
-                if not workspace:Raycast(rayResult.Position + Vector3.new(0, 20, 0), Vector3.new(0, -25, 0), plantCheckParams) then
-                    task.spawn(function()
-                        local newCFrame = CFrame.new(rayResult.Position) * CFrame.new(0, 3, 0) * PlantedObjectCFrame.Rotation
-                        local endCFrame = CFrame.new(rayResult.Position.X, PlantedObjectCFrame.Y, rayResult.Position.Z) * PlantedObjectCFrame.Rotation
-                        local object = PlantedObject
-                        object:PivotTo(newCFrame)
-                        local timeElapsed = 0
-                        while timeElapsed < 0.15 do
-                            timeElapsed += RunService.Heartbeat:Wait()
-                            object:PivotTo(newCFrame:Lerp(endCFrame, game:GetService("TweenService"):GetValue(timeElapsed / 0.1, Enum.EasingStyle.Quad, Enum.EasingDirection.In)))
-                        end
-                        TrowelRemote:InvokeServer("Place", SelectedSeed, object, endCFrame)
-                    end)
-                    for _, part in DisabledParts do
-                        part.CanCollide = true
-                        part.CanQuery = true
-                    end
-                    PlantedObject = nil
-                end
-            end
-        else
-            local rayHit = RaycastIgnoreShovel(mousePos)
-            if rayHit then
-                local hitParent = rayHit.Instance.Parent
-                if IsValidPlantTarget(hitParent) then
-                    TrowelRemote:InvokeServer("Pickup", SelectedSeed, hitParent)
-                    PlantedObjectCFrame = hitParent:GetPivot()
-                    for _, part in hitParent:GetDescendants() do
-                        if part:IsA("BasePart") and part.CanCollide then
-                            part.CanCollide = false
-                            part.CanQuery = false
-                            table.insert(DisabledParts, part)
-                        elseif part:IsA("BasePart") then
-                            part.CanQuery = false
-                        end
-                    end
-                    PlantedObject = hitParent
-                end
-            end
-        end
-    end
-end
 local function updateParagraph()
 	local allItems = {}
 
@@ -327,7 +243,67 @@ local function StartAutoBuy()
 		task.wait(0.1)
 	end
 end
+
 task.spawn(StartAutoBuy)
+
+local function sendStockAndWeather()
+    local seedStock = {}
+    local gearStock = {}
+    local eggStock = {}
+
+    for _, seed in pairs(SeedShop.Frame.ScrollingFrame:GetChildren()) do
+        if seed:FindFirstChild("Main_Frame") then
+            local stockText = seed.Main_Frame:FindFirstChild("Stock_Text")
+            if stockText and stockText.Text ~= "X0 Stock" then
+                table.insert(seedStock, seed.Name .. ": " .. stockText.Text)
+            end
+        end
+    end
+
+    for _, gear in pairs(GearShop.Frame.ScrollingFrame:GetChildren()) do
+        if gear:FindFirstChild("Main_Frame") then
+            local stockText = gear.Main_Frame:FindFirstChild("Stock_Text")
+            if stockText and stockText.Text ~= "X0 Stock" then
+                table.insert(gearStock, gear.Name .. ": " .. stockText.Text)
+            end
+        end
+    end
+
+    for _, egg in pairs(Eggs:GetChildren()) do
+        if egg:IsA("Model") and egg:FindFirstChild("Part") then
+            local status = egg.Part.Transparency ~= 0.65 and "Available" or "Not Available"
+            table.insert(eggStock, egg.Name)
+        end
+    end
+
+    local message = "**🌾 Seed Stocks:**\n" .. table.concat(seedStock, "\n") ..
+                    "\n\n**⚙️ Gear Stocks:**\n" .. table.concat(gearStock, "\n") ..
+                    "\n\n**🥚 Egg Stock:**\n" .. table.concat(eggStock, "\n") ..
+                    "\n\n**🌦️ Current Weather:**\n" .. (_G.CurrentWeather or "None")
+
+    sendWebhookMessage(message)
+end
+task.spawn(function()
+    while true do
+        local timerLabel = SeedShop.Frame.Frame.Timer
+        if timerLabel then
+            local timeStr = string.match(timerLabel.Text, "(%d+:%d+)")
+            if timeStr then
+                local minutes, seconds = string.match(timeStr, "(%d+):(%d+)")
+                local totalSeconds = tonumber(minutes) * 60 + tonumber(seconds)
+
+                task.wait(totalSeconds + 1)
+                sendStockAndWeather()
+            else
+                warn("⛔ Could not parse time string from label: " .. timerLabel.Text)
+                task.wait(5)
+            end
+        else
+            warn("⛔ Timer label not found.")
+            task.wait(5)
+        end
+    end
+end)
 -- Harvest & Sell Section
 local function removeCollision()
 	if not _G.Farm then return end
@@ -489,21 +465,27 @@ local function AutoSell()
 	end
 end
 local function StopOnWeather()
-    if _G.WeatherConnection then _G.WeatherConnection:Disconnect() end 
+    if _G.WeatherConnection then
+        _G.WeatherConnection:Disconnect()
+    end 
 
-	for name, value in pairs(workspace:GetAttributes()) do
+    for name, value in pairs(workspace:GetAttributes()) do
         if value and name:match("(.+)Event$") then 
             local weatherName = name:match("(.+)Event")
+            _G.CurrentWeather = weatherName
+            sendStockAndWeather()
 
-            if table.find(_G.WeathersStop, weatherName) then
+            if table.find(_G.WeathersStop, weatherName) and _G.StopOnWeather then
                 _G.StopHarvest = true
                 Status:Set("Status: Waiting for weather to end...")
+
                 while workspace:GetAttribute(name) do
                     if not _G.StopOnWeather then
                         break
                     end
                     task.wait(0.25)
                 end
+
                 _G.StopHarvest = false
                 break
             end
@@ -511,12 +493,21 @@ local function StopOnWeather()
     end
 
     _G.WeatherConnection = workspace.AttributeChanged:Connect(function(attribute)
-        if table.find(_G.WeathersStop, attribute) and workspace:GetAttribute(attribute) then
+        local weatherName = tostring(attribute):match("(.+)Event")
+
+        if weatherName and workspace:GetAttribute(attribute) then
+            _G.CurrentWeather = weatherName
+			sendStockAndWeather()
+        else
+            _G.CurrentWeather = nil
+        end
+
+        if table.find(_G.WeathersStop, attribute) and workspace:GetAttribute(attribute) and _G.StopOnWeather then
             _G.StopHarvest = true
             while workspace:GetAttribute(attribute) do
-			    if not _G.StopOnWeather then
-				    break
-				end
+                if not _G.StopOnWeather then
+                    break
+                end
                 task.wait(0.25)
             end
             _G.StopHarvest = false
@@ -566,6 +557,10 @@ Shop:CreateDropdown({
 	CurrentOption = {},
 	Flag = "WantedEggDropdown",
 	Callback = function(Selected) _G.wantedegg = Selected end
+})
+Misc:CreateButton({
+    Name = "Send Stock and Weather Info",
+    Callback = sendStockAndWeather
 })
 AutoTab:CreateToggle({
 	Name = "Auto Harvest",
@@ -664,26 +659,6 @@ Misc:CreateButton({
    Name = "Teleport to Egg Shop",
    Callback = function()
         Player.Character.HumanoidRootPart.CFrame = CFrame.new(-257.941437, 2.99999976, 0.139790639, 0.00901781209, 3.10404964e-08, 0.99995935, -7.48513003e-08, 1, -3.03667385e-08, -0.99995935, -7.4574416e-08, 0.00901781209)
-   end,
-})
-Misc:CreateButton({
-   Name = "INF Trowel (Does not save the Position)",
-   Callback = function()
-       if not Player.Backpack:FindFirstChild("Free Trowel") then
-	        if Player.PlayerScripts["Trowel_Client"].Enabled then
-                Player.PlayerScripts["Trowel_Client"].Disabled = true
-            end
-            _G.FreeTrowel = Instance.new("Tool")
-	        _G.FreeTrowel.Name = "Free Trowel"
-	        _G.FreeTrowel.Parent = Player.Backpack
-
-			_G.FreeTrowelConnection = _G.FreeTrowel.Unequipped:Connect(CancelPlanting)
-			_G.ButtonCon = Player:GetMouse().Button1Down:Connect(UseTrowel)
-		else
-		     CancelPlanting()
-		    _G.FreeTrowelConnection = Player.Backpack:FindFirstChild("Free Trowel").Unequipped:Connect(CancelPlanting)
-			_G.ButtonCon = Player:GetMouse().Button1Down:Connect(UseTrowel)
-	   end
    end,
 })
 Misc:CreateToggle({
