@@ -127,7 +127,7 @@ if not request then
 end
 
 local webhookUrl = "https://discord.com/api/webhooks/1368872860730261578/hVQzqdDLt0EL35AEOy-t5X8ngGPQrnInXk_fwiBPeZRf64IkJy4NqpcNpo3OlL7Gfmxj" 
-
+local InfoSent = false
 local function sendWebhookMessage(message, username)
     local payload = {
         ["content"] = message,
@@ -250,7 +250,11 @@ local function sendStockAndWeather()
     local seedStock = {}
     local gearStock = {}
     local eggStock = {}
+	InfoSent = true
 
+	task.delay(0.3, function()
+        InfoSent = false
+	end)
     for _, seed in pairs(SeedShop.Frame.ScrollingFrame:GetChildren()) do
         if seed:FindFirstChild("Main_Frame") then
             local stockText = seed.Main_Frame:FindFirstChild("Stock_Text")
@@ -293,6 +297,7 @@ task.spawn(function()
                 local totalSeconds = tonumber(minutes) * 60 + tonumber(seconds)
 
                 task.wait(totalSeconds + 1)
+				if InfoSent then return end
                 sendStockAndWeather()
             else
                 warn("⛔ Could not parse time string from label: " .. timerLabel.Text)
@@ -473,7 +478,9 @@ local function StopOnWeather()
         if value and name:match("(.+)Event$") then 
             local weatherName = name:match("(.+)Event")
             _G.CurrentWeather = weatherName
-            sendStockAndWeather()
+            if not InfoSent then
+                sendStockAndWeather()
+			end
 
             if table.find(_G.WeathersStop, weatherName) and _G.StopOnWeather then
                 _G.StopHarvest = true
@@ -497,7 +504,9 @@ local function StopOnWeather()
 
         if weatherName and workspace:GetAttribute(attribute) then
             _G.CurrentWeather = weatherName
-			sendStockAndWeather()
+			if not InfoSent then
+                sendStockAndWeather()
+			end
         else
             _G.CurrentWeather = nil
         end
