@@ -1,5 +1,4 @@
 local Rayfield = loadstring(game:HttpGet("https://sirius.menu/rayfield"))()
-
 local Window = Rayfield:CreateWindow({
 	Name = "PORN HUB",
 	LoadingTitle = "PORN HUB",
@@ -10,7 +9,6 @@ local Window = Rayfield:CreateWindow({
 		FileName = "PORN HUB"
 	},
 })
-
 local AutoTab = Window:CreateTab("Automation", 4483362458)
 local Shop = Window:CreateTab("Shop", 4483362458)
 local Weather = Window:CreateTab("Weather", 4483362458)
@@ -21,34 +19,21 @@ local PurchaseParagraph = Shop:CreateParagraph({
 	Title = "Purchased Items:",
 	Content = "",
 })
-
 local MoneyLabel = Shop:CreateLabel("Money Earned: 0")
-
 local Status = AutoTab:CreateLabel("Status: Stopped")
 
 -- Tables and Shits
 local SeedCounts, GearCounts, EggCounts, Spots, canPlantParts, lastBought, MoneyEarned, index, spotIndex = {}, {}, {}, {}, {}, {}, 0, 1, 1
-local AllSeeds, AllGears, AllEggs, AllMutations = {}, {}, {}, {"Frozen", "Shocked", "Wet", "Rainbow", "Gold", "Chilled"}
+local AllSeeds, AllGears, AllEggs, AllMutations = {}, {}, {}, {}
 local Selling, Moving, Checking = false, false, false
-
-local PlantedObject = nil
-local SelectedSeed = nil
-local PlantedObjectCFrame = nil
-local DisabledParts = {}
-local FreeTrowelConnection = nil
-
 _G.AutoBuySeed, _G.AutoBuyGear, _G.AutoBuyEgg = false, false, false
-_G.wantedgear, _G.wantedseed, _G.wantedegg= {}, {}, {}
-_G.IgnoreSeed, _G.IgnoreMutation, _G.WeathersStop, _G.IgnoreWeight, _G.Harvest, _G.AutoSell, _G.AutoPlace, _G.StopOnWeather, _G.StopHarvest, _G.Farm, _G.WeatherConnection, _G.ButtonCon, _G.FreeTrowelConnection = {}, {}, {}, "None", false, false, false, false, nil, nil, nil, nil
+_G.wantedgear, _G.wantedseed, _G.wantedegg = {}, {}, {}
+_G.IgnoreSeed, _G.IgnoreMutation, _G.WeathersStop, _G.IgnoreWeight, _G.Harvest, _G.AutoSell, _G.AutoPlace, _G.StopOnWeather, _G.StopHarvest, _G.Farm, _G.WeatherConnection = {}, {}, {}, "None", false, false, false, false, nil, nil
 if not _G.ReducedPlants then
     _G.ReducedPlants = {}
 end
+
 --Positions and CFrames
-local HBLocations = {
-	[1] = CFrame.new(-264.04126, 2.87553048, -3.26961374),
-	[2] = CFrame.new(-264.039246, 2.79750657, 4.77034855),
-	[3] = CFrame.new(-264.031219, 2.79750657, 0.740396142),
-}
 local offsetList = {
     Vector3.new(0, 0, 0),
     Vector3.new(0, 0, 0),
@@ -62,41 +47,37 @@ local offsetList = {
 local Players = game.Players
 local Player = Players.LocalPlayer
 local PlayerGui = Player:WaitForChild("PlayerGui")
+
 local ReplicatedStorage = game.ReplicatedStorage
 local UIS = game:GetService("UserInputService")
-local RunService = game:GetService("RunService")
-local Camera = workspace.CurrentCamera
 
 local Modules = ReplicatedStorage.Modules
 
 local GetFarm = require(Modules.GetFarm)
+local DataService = require(Modules.DataService)
+local SeedData = require(ReplicatedStorage.Data.SeedData)
+local GearData = require(ReplicatedStorage.Data.GearData)
+local EggData = require(ReplicatedStorage.Data.PetEggData)
+local MutationHandler = require(game.ReplicatedStorage.Modules.MutationHandler)
 
-local TrowelRemote = ReplicatedStorage:WaitForChild("GameEvents"):WaitForChild("TrowelRemote")
-
-local SeedShop = PlayerGui:WaitForChild("Seed_Shop")
-local GearShop = PlayerGui:WaitForChild("Gear_Shop")
-local PetConf = PlayerGui:WaitForChild("ConfirmPetEggPurchase")
 local Eggs = workspace.NPCS["Pet Stand"]:WaitForChild("EggLocations")
 local GameEvents = ReplicatedStorage:WaitForChild("GameEvents")
-local EggModels = ReplicatedStorage.Assets.Models.EggModels
 
 _G.Farm = GetFarm(Player).Important
 
-for _, seed in pairs(SeedShop.Frame.ScrollingFrame:GetChildren()) do
-	if seed:FindFirstChild("Main_Frame") then
-		table.insert(AllSeeds, seed.Name)
-	end
+for name, value in pairs(SeedData) do
+	table.insert(AllSeeds, tostring(name))
 end
-for _, gear in pairs(GearShop.Frame.ScrollingFrame:GetChildren()) do
-	if gear:FindFirstChild("Main_Frame") then
-		table.insert(AllGears, gear.Name)
-	end
+for name, value in pairs(GearData) do
+	table.insert(AllGears, tostring(name))
 end
-for _, egg in pairs(EggModels:GetChildren()) do
-	if egg:IsA("Model") then
-		table.insert(AllEggs, egg.Name)
-	end
+for name, value in pairs(EggData) do
+	table.insert(AllEggs, tostring(name))
 end
+for name, value in pairs(MutationHandler:GetMutations()) do
+	table.insert(AllMutations, tostring(name))
+end
+
 if _G.Farm and _G.Farm:FindFirstChild("Plant_Locations") then
     for _, descendant in ipairs(_G.Farm.Plant_Locations:GetDescendants()) do
         if descendant:IsA("BasePart") and descendant.Name == "Can_Plant" then
@@ -182,133 +163,129 @@ local function updateParagraph()
 		Content = table.concat(allItems, "\n")
 	})
 end
-local function isSameCFrame(cf1, cf2, tolerance)
-	tolerance = tolerance or 0.01
-	return (cf1.Position - cf2.Position).magnitude <= tolerance
+local function sendStockAndWeather()
+    _G.InfoSent = true
+    task.delay(0.5, function()
+        _G.InfoSent = false
+    end)
+
+    local success, err = pcall(function()
+        local seedStock = {}
+        local gearStock = {}
+        local eggStock = {}
+
+        local SeedStock = DataService:GetData().SeedStock.Stocks
+        local GearStock = DataService:GetData().GearStock.Stocks
+        local EggStock = DataService:GetData().PetEggStock.Stocks
+
+        for seedName, seedData in pairs(SeedStock) do
+            table.insert(seedStock, seedName .. ": X" .. tostring(seedData.MaxStock) .. " Stock")
+        end
+
+        for gearName, gearData in pairs(GearStock) do
+            table.insert(gearStock, gearName .. ": X" .. tostring(gearData.MaxStock) .. " Stock")
+        end
+
+        for _, eggData in ipairs(EggStock) do
+            table.insert(eggStock, tostring(eggData.EggName))
+        end
+
+        local message = "**🌾 Seed Stocks:**\n" .. (#seedStock > 0 and table.concat(seedStock, "\n") or "None") ..
+                        "\n\n**⚙️ Gear Stocks:**\n" .. (#gearStock > 0 and table.concat(gearStock, "\n") or "None") ..
+                        "\n\n**🥚 Egg Stock:**\n" .. (#eggStock > 0 and table.concat(eggStock, "\n") or "None") ..
+                        "\n\n**🌦️ Current Weather:**\n" .. (_G.CurrentWeather or "None")
+
+        sendWebhookMessage(message)
+    end)
+
+    if not success then
+        warn("sendStockAndWeather error: " .. tostring(err))
+    end
 end
-local function parseTimeStr(timeStr)
-	local h, m, s = timeStr:match("^(%d+):(%d+):(%d+)$")
-	h, m, s = tonumber(h), tonumber(m), tonumber(s)
-	if not (h and m and s) then return 0 end
-	return h * 3600 + m * 60 + s
-end
-local function StartAutoBuy()
+
+local function AutoBuy()
 	while true do
-		if _G.AutoBuySeed then
-			for _, seed in pairs(SeedShop.Frame.ScrollingFrame:GetChildren()) do
-				if table.find(_G.wantedseed, seed.Name) then
-					local stockText = seed:FindFirstChild("Main_Frame") and seed.Main_Frame:FindFirstChild("Stock_Text")
-					if stockText and stockText.Text ~= "X0 Stock" then
-						GameEvents:WaitForChild("BuySeedStock"):FireServer(seed.Name)
-						SeedCounts[seed.Name] = (SeedCounts[seed.Name] or 0) + 1
-						updateParagraph()
-					end
-				end
-			end
-		end
-		if _G.AutoBuyGear then
-			for _, gear in pairs(GearShop.Frame.ScrollingFrame:GetChildren()) do
-				if table.find(_G.wantedgear, gear.Name) then
-					local stockText = gear:FindFirstChild("Main_Frame") and gear.Main_Frame:FindFirstChild("Stock_Text")
-					if stockText and stockText.Text ~= "X0 Stock" then
-						GameEvents:WaitForChild("BuyGearStock"):FireServer(gear.Name)
-						GearCounts[gear.Name] = (GearCounts[gear.Name] or 0) + 1
-						updateParagraph()
-					end
-				end
-			end
-		end
-		if _G.AutoBuyEgg then
-			for _, egg in pairs(Eggs:GetChildren()) do
-				if table.find(_G.wantedegg, egg.Name) and egg.Part.Transparency ~= 0.65 then
-					local timerLabel = workspace.NPCS["Pet Stand"].Timer.SurfaceGui:FindFirstChild("ResetTimeLabel")
-					local timerText = timerLabel and timerLabel.Text or "00:00:00"
-					local timeLeft = parseTimeStr(timerText)
+		local GearStock = DataService:GetData().GearStock.Stocks
+        local SeedStock = DataService:GetData().SeedStock.Stocks
+        local EggStock = DataService:GetData().PetEggStock.Stocks
 
-					local now = tick()
-					if lastBought[egg] and now < lastBought[egg] then continue end
+        if _G.AutoBuySeed then
+            for seedName, seedData in pairs(SeedStock) do
+                if table.find(_G.wantedseed, tostring(seedName)) and seedData.Stock > 0 then
+                    for i = 1, seedData.Stock do
+                        GameEvents:WaitForChild("BuySeedStock"):FireServer(tostring(seedName))
+                        SeedCounts[tostring(seedName)] = (SeedCounts[tostring(seedName)] or 0) + 1
+                        task.wait(0.1)
+                    end
+					updateParagraph()
+                end
+            end
+        end
 
-					for index, loc in ipairs(HBLocations) do
-						if isSameCFrame(egg.HitBox.CFrame, loc) then
-							GameEvents:WaitForChild("BuyPetEgg"):FireServer(index)
-							EggCounts[egg.Name] = (EggCounts[egg.Name] or 0) + 1
-							updateParagraph()
-							lastBought[egg] = tick() + timeLeft
-							break
-						end
-					end
-				end
-			end
-		end
-		task.wait(0.1)
+        if _G.AutoBuyGear then
+            for gearName, gearData in pairs(GearStock) do
+                if table.find(_G.wantedgear, tostring(gearName)) and gearData.Stock > 0 then
+                    for i = 1, gearData.Stock do
+                        GameEvents:WaitForChild("BuyGearStock"):FireServer(tostring(gearName))
+                        GearCounts[tostring(gearName)] = (GearCounts[tostring(gearName)] or 0) + 1
+                        task.wait(0.1)
+                    end
+					updateParagraph()
+                end
+            end
+        end
+
+        if _G.AutoBuyEgg then
+            for index, eggData in ipairs(EggStock) do
+                if table.find(_G.wantedegg, tostring(eggData.EggName)) and eggData.Stock > 0 then
+                    for i = 1, eggData.Stock do
+                        GameEvents:WaitForChild("BuyPetEgg"):FireServer(tonumber(index))
+                        EggCounts[tostring(eggData.EggName)] = (EggCounts[tostring(eggData.EggName)] or 0) + 1
+                        task.wait(0.1)
+                    end
+					updateParagraph()
+                end
+            end
+        end
+        task.wait(1)
 	end
 end
 
-task.spawn(StartAutoBuy)
+task.spawn(AutoBuy)
 
-local function sendStockAndWeather()
-    local seedStock = {}
-    local gearStock = {}
-    local eggStock = {}
-	InfoSent = true
-
-	task.delay(0.3, function()
-        InfoSent = false
-	end)
-    for _, seed in pairs(SeedShop.Frame.ScrollingFrame:GetChildren()) do
-        if seed:FindFirstChild("Main_Frame") then
-            local stockText = seed.Main_Frame:FindFirstChild("Stock_Text")
-            if stockText and stockText.Text ~= "X0 Stock" then
-                table.insert(seedStock, seed.Name .. ": " .. stockText.Text)
-            end
-        end
-    end
-
-    for _, gear in pairs(GearShop.Frame.ScrollingFrame:GetChildren()) do
-        if gear:FindFirstChild("Main_Frame") then
-            local stockText = gear.Main_Frame:FindFirstChild("Stock_Text")
-            if stockText and stockText.Text ~= "X0 Stock" then
-                table.insert(gearStock, gear.Name .. ": " .. stockText.Text)
-            end
-        end
-    end
-
-    for _, egg in pairs(Eggs:GetChildren()) do
-        if egg:IsA("Model") and egg:FindFirstChild("Part") then
-            local status = egg.Part.Transparency ~= 0.65 and "Available" or "Not Available"
-            table.insert(eggStock, egg.Name)
-        end
-    end
-
-    local message = "**🌾 Seed Stocks:**\n" .. table.concat(seedStock, "\n") ..
-                    "\n\n**⚙️ Gear Stocks:**\n" .. table.concat(gearStock, "\n") ..
-                    "\n\n**🥚 Egg Stock:**\n" .. table.concat(eggStock, "\n") ..
-                    "\n\n**🌦️ Current Weather:**\n" .. (_G.CurrentWeather or "None")
-
-    sendWebhookMessage(message)
+local SeedSC1 = DataService:GetPathSignal("SeedStock/@")
+if SeedSC1 then
+    SeedSC1:Connect(function()
+	    if not _G.InfoSent then
+	        sendStockAndWeather()
+		end
+    end)
 end
-task.spawn(function()
-    while true do
-        local timerLabel = SeedShop.Frame.Frame.Timer
-        if timerLabel then
-            local timeStr = string.match(timerLabel.Text, "(%d+:%d+)")
-            if timeStr then
-                local minutes, seconds = string.match(timeStr, "(%d+):(%d+)")
-                local totalSeconds = tonumber(minutes) * 60 + tonumber(seconds)
+local SeedSC2 = DataService:GetPathSignal("SeedStock")
+if SeedSC2 then
+    SeedSC2:Connect(function()
+	    if not _G.InfoSent then
+	        sendStockAndWeather()
+		end
+    end)
+end
+local EggSC1 = DataService:GetPathSignal("PetEggStock/@")
+if EggSC1 then
+    EggSC1:Connect(function()
+	    if not _G.InfoSent then
+	        sendStockAndWeather()
+		end
+    end)
+end
+local EggSC2 = DataService:GetPathSignal("PetEggStock")
+if EggSC2 then
+    EggSC2:Connect(function()
+	    if not _G.InfoSent then
+	        sendStockAndWeather()
+		end
+    end)
+end
 
-                task.wait(totalSeconds + 1)
-				if InfoSent then return end
-                sendStockAndWeather()
-            else
-                warn("⛔ Could not parse time string from label: " .. timerLabel.Text)
-                task.wait(5)
-            end
-        else
-            warn("⛔ Timer label not found.")
-            task.wait(5)
-        end
-    end
-end)
 -- Harvest & Sell Section
 local function removeCollision()
 	if not _G.Farm then return end
@@ -357,7 +334,7 @@ local function Alternate()
 					break
 				end
 				humanoid:ChangeState(Enum.HumanoidStateType.Jumping)
-                task.wait(0.7)
+                task.wait(1)
             end
 			Checking = false
         end)
@@ -478,7 +455,7 @@ local function StopOnWeather()
         if value and name:match("(.+)Event$") then 
             local weatherName = name:match("(.+)Event")
             _G.CurrentWeather = weatherName
-            if not InfoSent then
+            if not _G.InfoSent then
                 sendStockAndWeather()
 			end
 
@@ -502,9 +479,9 @@ local function StopOnWeather()
     _G.WeatherConnection = workspace.AttributeChanged:Connect(function(attribute)
         local weatherName = tostring(attribute):match("(.+)Event")
 
-        if weatherName and workspace:GetAttribute(attribute) then
+        if weatherName and workspace:GetAttribute(attribute) == true then
             _G.CurrentWeather = weatherName
-			if not InfoSent then
+			if not _G.InfoSent then
                 sendStockAndWeather()
 			end
         else
