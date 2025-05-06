@@ -94,11 +94,13 @@ end
 for name, value in pairs(MutationHandler:GetMutations()) do
 	table.insert(AllMutations, tostring(name))
 end
-if _G.StockConnection then
-    for _, connection in pairs(_G.StockConnection) do
+if _G.AConnections then
+    for _, connection in pairs(_G.AConnections) do
         connection:Disconnect()
     end
 end
+_G.AConnections = {}
+
 local SprinklerParams = RaycastParams.new()
 local include = {}
 for _, farm in workspace.Farm:GetChildren() do
@@ -108,6 +110,12 @@ for _, farm in workspace.Farm:GetChildren() do
 end
 SprinklerParams.FilterDescendantsInstances = include
 SprinklerParams.FilterType = Enum.RaycastFilterType.Include
+local VirtualUser = game:GetService("VirtualUser")
+_G.AConnections[5] = Player.Idled:connect(function()
+	VirtualUser:CaptureController()
+	VirtualUser:ClickButton2(Vector2.new())
+end)
+
 local MIN_DISTANCE = 3
 local function IsTooCloseToOtherSprinklers(pos)
     local newPos = pos.Position
@@ -349,10 +357,10 @@ local function AutoBuy()
         task.wait(1)
 	end
 end
-_G.StockConnection = {}
 local SeedSC1 = DataService:GetPathSignal("SeedStock/@")
 if SeedSC1 then
-    _G.StockConnection[1] = SeedSC1:Connect(function()
+    _G.AConnections[1] = SeedSC1:Connect(function()
+        task.wait(.1)
 	    if not _G.InfoSent then
 	        sendStockAndWeather()
 		end
@@ -360,7 +368,8 @@ if SeedSC1 then
 end
 local SeedSC2 = DataService:GetPathSignal("SeedStock")
 if SeedSC2 then
-    _G.StockConnection[2] = SeedSC2:Connect(function()
+    _G.AConnections[2] = SeedSC2:Connect(function()
+        task.wait(.2)
 	    if not _G.InfoSent then
 	        sendStockAndWeather()
 		end
@@ -368,7 +377,8 @@ if SeedSC2 then
 end
 local EggSC1 = DataService:GetPathSignal("PetEggStock/@")
 if EggSC1 then
-    _G.StockConnection[3] = EggSC1:Connect(function()
+    _G.AConnections[3] = EggSC1:Connect(function()
+        task.wait(.3)
 	    if not _G.InfoSent then
 	        sendStockAndWeather()
 		end
@@ -376,13 +386,13 @@ if EggSC1 then
 end
 local EggSC2 = DataService:GetPathSignal("PetEggStock")
 if EggSC2 then
-    _G.StockConnection[4] = EggSC2:Connect(function()
+    _G.AConnections[4] = EggSC2:Connect(function()
+        task.wait(.4)
 	    if not _G.InfoSent then
 	        sendStockAndWeather()
 		end
     end)
 end
-
 -- Harvest & Sell Section
 local function removeCollision()
 	if not _G.Farm then return end
@@ -611,7 +621,7 @@ local function AutoSprinkler()
 
                 local lastData = _G.LastPlacedTimes[itemName] or {time = 0, pos = nil}
                 local isSamePosition = lastData.pos and (lastData.pos == placePos)
-                
+
                 if isSamePosition and (os.time() - lastData.time <= cooldown) then
                     continue
                 end
