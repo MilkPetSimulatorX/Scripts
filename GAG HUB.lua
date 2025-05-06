@@ -13,7 +13,6 @@ local AutoTab = Window:CreateTab("Automation", 4483362458)
 local Shop = Window:CreateTab("Shop", 4483362458)
 local Weather = Window:CreateTab("Weather", 4483362458)
 local Misc = Window:CreateTab("Misc", 4483362458)
-
 -- Dynamic Labels
 local PurchaseParagraph = Shop:CreateParagraph({
 	Title = "Purchased Items:",
@@ -21,18 +20,16 @@ local PurchaseParagraph = Shop:CreateParagraph({
 })
 local MoneyLabel = Shop:CreateLabel("Money Earned: 0")
 local Status = AutoTab:CreateLabel("Status: Stopped")
-
 -- Tables and Shits
 local SeedCounts, GearCounts, EggCounts, Spots, canPlantParts, lastBought, MoneyEarned, index, spotIndex = {}, {}, {}, {}, {}, {}, 0, 1, 1
 local AllSeeds, AllGears, AllEggs, AllMutations = {}, {}, {}, {}
 local Selling, Moving, Checking = false, false, false
-_G.AutoBuySeed, _G.AutoBuyGear, _G.AutoBuyEgg = false, false, false
+_G.AutoBuy, _G.AutoBuySeed, _G.AutoBuyGear, _G.AutoBuyEgg = false, false, false, false
 _G.wantedgear, _G.wantedseed, _G.wantedegg = {}, {}, {}
-_G.IgnoreSeed, _G.IgnoreMutation, _G.WeathersStop, _G.IgnoreWeight, _G.Harvest, _G.AutoSell, _G.AutoPlace, _G.StopOnWeather, _G.StopHarvest, _G.Farm, _G.WeatherConnection = {}, {}, {}, "None", false, false, false, false, nil, nil
+_G.HarvestMethod, _G.IgnoreSeed, _G.IgnoreMutation, _G.SprinklerToPlace, _G.WeathersStop, _G.IgnoreWeight, _G.Harvest, _G.AutoPlaceSprinker, _G.AutoSell, _G.AutoPlace, _G.StopOnWeather, _G.StopHarvest, _G.Farm, _G.WeatherConnection = {}, {}, {}, {}, {}, "None", false, false, false, false, false, nil, nil
 if not _G.ReducedPlants then
     _G.ReducedPlants = {}
 end
-
 --Positions and CFrames
 local offsetList = {
     Vector3.new(0, 0, 0),
@@ -41,30 +38,50 @@ local offsetList = {
     Vector3.new(0, 0, -25),
     Vector3.new(0, 0, 25),
     Vector3.new(0, 0, -25),
+    Vector3.new(0, 0, 15),
+    Vector3.new(0, 0, -15),
+    Vector3.new(0, 0, 10),
+    Vector3.new(0, 0, -10),
+    Vector3.new(0, 35, 0),
+    Vector3.new(0, 35, 0),
+    Vector3.new(0, 35, 25),
+    Vector3.new(0, 35, -25),
+    Vector3.new(0, 35, 25),
+    Vector3.new(0, 35, -25),
+    Vector3.new(0, 25, 0),
+    Vector3.new(0, 25, 0),
+    Vector3.new(0, 25, 25),
+    Vector3.new(0, 25, -25),
+    Vector3.new(0, 25, 25),
+    Vector3.new(0, 25, -25),
+    Vector3.new(0, 15, 15),
+    Vector3.new(0, 15, -15),
+    Vector3.new(0, 15, 10),
+    Vector3.new(0, 15, -10),
 }
-
 -- Player Setup
 local Players = game.Players
 local Player = Players.LocalPlayer
 local PlayerGui = Player:WaitForChild("PlayerGui")
-
 local ReplicatedStorage = game.ReplicatedStorage
 local UIS = game:GetService("UserInputService")
-
 local Modules = ReplicatedStorage.Modules
-
 local GetFarm = require(Modules.GetFarm)
 local DataService = require(Modules.DataService)
 local SeedData = require(ReplicatedStorage.Data.SeedData)
 local GearData = require(ReplicatedStorage.Data.GearData)
 local EggData = require(ReplicatedStorage.Data.PetEggData)
-local MutationHandler = require(game.ReplicatedStorage.Modules.MutationHandler)
-
+local MutationHandler = require(Modules.MutationHandler)
+local InventoryService = require(Modules.InventoryService)
 local Eggs = workspace.NPCS["Pet Stand"]:WaitForChild("EggLocations")
 local GameEvents = ReplicatedStorage:WaitForChild("GameEvents")
+local SprinklerService = GameEvents:WaitForChild("SprinklerService")
 
+local request = http and http.request or syn and syn.request or http_request
+if not request then
+    return warn("❌ Your executor does not support http requests.")
+end
 _G.Farm = GetFarm(Player).Important
-
 for name, value in pairs(SeedData) do
 	table.insert(AllSeeds, tostring(name))
 end
@@ -77,7 +94,94 @@ end
 for name, value in pairs(MutationHandler:GetMutations()) do
 	table.insert(AllMutations, tostring(name))
 end
+if _G.StockConnection then
+    for _, connection in pairs(_G.StockConnection) do
+        connection:Disconnect()
+    end
+end
+local SprinklerParams = RaycastParams.new()
+local include = {}
+for _, farm in workspace.Farm:GetChildren() do
+    for _, location in farm.Important.Plant_Locations:GetChildren() do
+        table.insert(include, location)
+    end
+end
+SprinklerParams.FilterDescendantsInstances = include
+SprinklerParams.FilterType = Enum.RaycastFilterType.Include
+local MIN_DISTANCE = 5 
+local function IsTooCloseToOtherSprinklers(pos)
+    local newPos = pos.Position
+    local otherPositions = {
+        _G.BSPosition,
+        _G.ASPosition,
+        _G.GSPosition,
+        _G.MSPosition,
+    }
 
+    for _, existingPos in pairs(otherPositions) do
+        if existingPos and typeof(existingPos) == "CFrame" and existingPos ~= pos then
+            local dist = (existingPos.Position - newPos).Magnitude
+            if dist < MIN_DISTANCE then
+                return true
+            end
+        end
+    end
+    return false
+end
+local function DetermineValidity(Pos)
+    local raycast = workspace:Raycast(Pos.Position + Vector3.new(0, 10, 0), Vector3.new(-0, -20, -0), SprinklerParams)
+    if not (raycast and (raycast.Instance and raycast.Position)) then
+        Rayfield:Notify({
+            Title = "Notification",
+            Content = "Needs a valid plot.",
+            Duration = 1.5,
+            Image = 4483362458,
+        })
+        return false
+    end
+    if IsTooCloseToOtherSprinklers(Pos) then
+        Rayfield:Notify({
+            Title = "Notification",
+            Content = "Too close to another sprinkler!",
+            Duration = 1.5,
+            Image = 4483362458,
+        })
+        return false
+    end
+    if raycast.Instance.Parent.Parent.Data.Owner.Value ~= "" then
+        return raycast
+    end
+    Rayfield:Notify({
+        Title = "Notification",
+        Content = "Needs a valid plot.",
+        Duration = 1.5,
+        Image = 4483362458,
+    })
+    return false
+end
+local function PlaceSprinler(Pos, Tool)
+    if DetermineValidity(Pos) then
+        local ToolData = InventoryService:GetToolData(Tool)
+        if ToolData then
+            if ToolData.ItemData then
+                SprinklerService:FireServer("Create", Pos)
+                Rayfield:Notify({
+                    Title = "Notification",
+                    Content = "Placed Sprinkler",
+                    Duration = 1,
+                    Image = 4483362458,
+                })
+                return true
+            else
+                return false
+            end
+        else
+            return false
+        end
+    else
+        return false
+    end
+end
 if _G.Farm and _G.Farm:FindFirstChild("Plant_Locations") then
     for _, descendant in ipairs(_G.Farm.Plant_Locations:GetDescendants()) do
         if descendant:IsA("BasePart") and descendant.Name == "Can_Plant" then
@@ -100,11 +204,6 @@ local function split(str, sep)
 		table.insert(result, item)
 	end
 	return result
-end
-local request = http and http.request or syn and syn.request or http_request
-
-if not request then
-    return warn("❌ Your executor does not support http requests.")
 end
 
 local webhookUrl = "https://discord.com/api/webhooks/1368872860730261578/hVQzqdDLt0EL35AEOy-t5X8ngGPQrnInXk_fwiBPeZRf64IkJy4NqpcNpo3OlL7Gfmxj" 
@@ -204,7 +303,7 @@ local function sendStockAndWeather()
 end
 
 local function AutoBuy()
-	while true do
+	while _G.AutoBuy do
 		local GearStock = DataService:GetData().GearStock.Stocks
         local SeedStock = DataService:GetData().SeedStock.Stocks
         local EggStock = DataService:GetData().PetEggStock.Stocks
@@ -250,12 +349,10 @@ local function AutoBuy()
         task.wait(1)
 	end
 end
-
-task.spawn(AutoBuy)
-
+_G.StockConnection = {}
 local SeedSC1 = DataService:GetPathSignal("SeedStock/@")
 if SeedSC1 then
-    SeedSC1:Connect(function()
+    _G.StockConnection[1] = SeedSC1:Connect(function()
 	    if not _G.InfoSent then
 	        sendStockAndWeather()
 		end
@@ -263,7 +360,7 @@ if SeedSC1 then
 end
 local SeedSC2 = DataService:GetPathSignal("SeedStock")
 if SeedSC2 then
-    SeedSC2:Connect(function()
+    _G.StockConnection[2] = SeedSC2:Connect(function()
 	    if not _G.InfoSent then
 	        sendStockAndWeather()
 		end
@@ -271,7 +368,7 @@ if SeedSC2 then
 end
 local EggSC1 = DataService:GetPathSignal("PetEggStock/@")
 if EggSC1 then
-    EggSC1:Connect(function()
+    _G.StockConnection[3] = EggSC1:Connect(function()
 	    if not _G.InfoSent then
 	        sendStockAndWeather()
 		end
@@ -279,7 +376,7 @@ if EggSC1 then
 end
 local EggSC2 = DataService:GetPathSignal("PetEggStock")
 if EggSC2 then
-    EggSC2:Connect(function()
+    _G.StockConnection[4] = EggSC2:Connect(function()
 	    if not _G.InfoSent then
 	        sendStockAndWeather()
 		end
@@ -298,147 +395,133 @@ local function removeCollision()
 	end
 end
 local function Alternate()
-    local character = Player.Character
-    if character and character:FindFirstChild("Humanoid") and character:FindFirstChild("HumanoidRootPart") and not Moving and Spots[spotIndex] and not Selling then
-        local humanoid = character.Humanoid
-        local destination = Spots[spotIndex].Position
+	local character = Player.Character
+	if character and character:FindFirstChild("Humanoid") and character:FindFirstChild("HumanoidRootPart") and not Moving and #Spots > 0 and not Selling then
+		local humanoid = character.Humanoid
+		local destination = Spots[math.random(1, #Spots)].Position
 		Moving = true
 
-        local connection
-        connection = humanoid.MoveToFinished:Connect(function(reached)
-		    Moving = false
-            if connection then
-                connection:Disconnect()
-            end
-        end)
-
-		character.HumanoidRootPart.Anchored = false
-		character.Humanoid.PlatformStand = false
-
-		if math.random(1,3) == 3 then
-            character.HumanoidRootPart.CFrame = CFrame.new(destination + Vector3.new(0, math.random(25,30), 0))
-			character.Humanoid.PlatformStand = true
-			character.HumanoidRootPart.Anchored = true
-			task.delay(0.3, function()
-			    Moving = false
-			end)
-		else
-		    humanoid:MoveTo(destination)
-		end
-
-        task.spawn(function()
-		    if Checking then return end
-			Checking = true
-            while humanoid and humanoid.Health > 0 and Checking do
-				if not _G.Harvest or _G.StopHarvest then
-					break
+		local connection
+		connection = humanoid.MoveToFinished:Connect(function()
+			Moving = false
+			if connection then connection:Disconnect() end
+		end)
+		if _G.HarvestMethod[1] == "Walk and Teleport" then
+			if math.random(1, 3) == 3 then
+				character.HumanoidRootPart.CFrame = CFrame.new(destination + Vector3.new(0, math.random(25, 30), 0))
+				if not character.HumanoidRootPart:FindFirstChild("StuckBV") then
+					local bv = Instance.new("BodyVelocity")
+					bv.Velocity = Vector3.new(0, 0, 0)
+					bv.MaxForce = Vector3.new(1e6, 1e6, 1e6)
+					bv.Name = "StuckBV"
+					bv.Parent = character.HumanoidRootPart
 				end
-				humanoid:ChangeState(Enum.HumanoidStateType.Jumping)
-                task.wait(1)
-            end
-			Checking = false
-        end)
+				task.delay(0.3, function() Moving = false end)
+			else
+                if character.HumanoidRootPart:FindFirstChild("StuckBV") then
+				    character.HumanoidRootPart:FindFirstChild("StuckBV"):Destroy()
+                end
+                task.wait()
+				humanoid:MoveTo(Vector3.new(destination.X, 0, destination.Z))
+			end
+		elseif _G.HarvestMethod[1] == "Teleport" then
+			if not character.HumanoidRootPart:FindFirstChild("StuckBV") then
+				local bv = Instance.new("BodyVelocity")
+				bv.Velocity = Vector3.new(0, 0, 0)
+				bv.MaxForce = Vector3.new(1e6, 1e6, 1e6)
+				bv.Name = "StuckBV"
+				bv.Parent = character.HumanoidRootPart
+			end
 
-        spotIndex += 1
-        if spotIndex > #Spots then
-            spotIndex = 1 
-        end
-    end
+			local Tween = game:GetService("TweenService"):Create(character.HumanoidRootPart, TweenInfo.new(0.2), {CFrame = CFrame.new(destination)})
+			Tween:Play()
+			Tween.Completed:Connect(function()
+				Moving = false
+				Tween:Destroy()
+			end)
+		end
+	end
 end
 local function StartHarvest()
-    Player.Character.HumanoidRootPart.CFrame = _G.Farm.Parent.Spawn_Point.CFrame
-	task.wait(1)
-    while _G.Harvest do
-        if _G.Farm and not Selling and not _G.StopHarvest then
-            task.spawn(removeCollision)
+	local character = Player.Character
+	character.HumanoidRootPart.CFrame = _G.Farm.Parent.Spawn_Point.CFrame
+	task.wait(0.25)
 
-            for _, plant in pairs(_G.Farm["Plants_Physical"]:GetChildren()) do
-                if table.find(_G.IgnoreSeed, plant.Name) then
-                    continue
-                end
+	while _G.Harvest do
+		if _G.Farm and not Selling and not _G.StopHarvest then
+			task.spawn(removeCollision)
 
-                if not _G.Harvest or Selling or _G.StopHarvest then
-                    break
-                end
+			for _, plant in pairs(_G.Farm["Plants_Physical"]:GetChildren()) do
+				if not _G.Harvest or Selling or _G.StopHarvest then break end
+				if table.find(_G.IgnoreSeed, plant.Name) then continue end
 
-                local skipDueToAttribute = false
+				local skip = false
+				local weight = plant:FindFirstChild("Weight")
+				local variant = plant:FindFirstChild("Variant")
 
 				if not plant:FindFirstChild("Fruits") then
-				    if _G.IgnoreWeight ~= "None" and plant.Weight.Value >= _G.IgnoreWeight then
-					    continue
-					end
-                    if plant:FindFirstChild("Variant") then
-					    if table.find(_G.IgnoreMutation, plant:FindFirstChild("Variant").Value) then
-						    continue
+					if _G.IgnoreWeight ~= "None" and weight and weight.Value >= _G.IgnoreWeight then continue end
+					if variant and table.find(_G.IgnoreMutation, variant.Value) then continue end
+					for name, val in pairs(plant:GetAttributes()) do
+						if table.find(_G.IgnoreMutation, name) and val then
+							skip = true
+							break
 						end
 					end
-                    for name, value in pairs(plant:GetAttributes()) do
-                        if table.find(_G.IgnoreMutation, name) and value == true then
-                            skipDueToAttribute = true
-                            break
-                        end
-                    end
 				end
 
-                if skipDueToAttribute then
-                    continue
-                end
+				if skip then continue end
 
-                for _, descendant in pairs(plant:GetDescendants()) do
-                    local parent = descendant.Parent
+				for _, d in pairs(plant:GetDescendants()) do
+					if not _G.Harvest or Selling or _G.StopHarvest then break end
 
-                    local parentVariant = parent:FindFirstChild("Variant")
-                    if parentVariant and table.find(_G.IgnoreMutation, parentVariant.Value) then
-                        continue
-                    end
+					local parent = d.Parent
+					local pv = parent:FindFirstChild("Variant")
+					if pv and table.find(_G.IgnoreMutation, pv.Value) then continue end
+					if parent:FindFirstChild("Weight") and _G.IgnoreWeight ~= "None" and parent.Weight.Value >= _G.IgnoreWeight then continue end
 
-					if parent:FindFirstChild("Weight") and _G.IgnoreWeight ~= "None" then
-					    if parent:FindFirstChild("Weight").Value >= _G.IgnoreWeight then
-						    continue
+					skip = false
+					for name, val in pairs(parent:GetAttributes()) do
+						if table.find(_G.IgnoreMutation, name) and val then
+							skip = true
+							break
 						end
 					end
+					if skip then continue end
 
-                    local skipChild = false
-                    for name, value in pairs(parent:GetAttributes()) do
-                        if table.find(_G.IgnoreMutation, name) and value == true then
-                            skipChild = true
-                            break
-                        end
-                    end
-                    if skipChild then
-                        continue
-                    end
+					if d:IsA("ProximityPrompt") then
+						Status:Set("Status: Picking Up Seeds!")
+						Alternate()
+						fireproximityprompt(d)
+						break
+					end
+				end
+			end
+		end
+		task.wait(0.15)
+	end
 
-                    if descendant:IsA("ProximityPrompt") then
-                        if not _G.Harvest or Selling or _G.StopHarvest then
-                            break
-                        end
-                        Status:Set("Status: Picking Up Seeds!")
-                        task.spawn(Alternate)
-                        fireproximityprompt(descendant)
-                    end
-                end
-            end
-        end
-        task.wait(3)
+	if Player.Character.HumanoidRootPart:FindFirstChild("StuckBV") then
+        Player.Character.HumanoidRootPart:FindFirstChild("StuckBV"):Destroy()
     end
-    Player.Character.HumanoidRootPart.Anchored = false
-	Player.Character.Humanoid.PlatformStand = false
-    Status:Set("Status: Stopped")
+	Status:Set("Status: Stopped")
 end
+
 local function AutoSell()
 	while _G.AutoSell do
 		if #Player.Backpack:GetChildren() >= 200 and not Selling then
 			Selling = true
             Status:Set("Status: Selling")
-			Player.Character.Humanoid.PlatformStand = false
-		    Player.Character.HumanoidRootPart.Anchored = false
+            if Player.Character.HumanoidRootPart:FindFirstChild("StuckBV") then
+                Player.Character.HumanoidRootPart:FindFirstChild("StuckBV"):Destroy()
+            end
+            task.wait(.1)
             Player.Character.HumanoidRootPart.CFrame = CFrame.new(61.579361, 3, 0.426799864)
 			task.wait(.1)
 			Player.Character.Humanoid:MoveTo(Vector3.new(65, 3, 1))
 			task.wait(.2)
             game:GetService("ReplicatedStorage"):WaitForChild("GameEvents"):WaitForChild("Sell_Inventory"):FireServer()
-			task.wait(3)
+			task.wait(2)
 			Player.Character.HumanoidRootPart.CFrame = _G.Farm.Parent.Spawn_Point.CFrame
 			task.wait(1.3)
 			Selling = false
@@ -501,12 +584,56 @@ local function StopOnWeather()
     end)
 end
 task.spawn(StopOnWeather)
+
+_G.LastPlacedTimes = _G.LastPlacedTimes or {}
+
+local SprinklerToPosition = {
+    ["Basic Sprinkler"] = _G.BSPosition,
+    ["Advanced Sprinkler"] = _G.ASPosition,
+    ["Godly Sprinkler"] = _G.GSPosition,
+    ["Master Sprinkler"] = _G.MSPosition,
+}
+
+local SprinklerCooldowns = {
+    ["Basic Sprinkler"] = 5 * 60,
+    ["Advanced Sprinkler"] = 5 * 60,
+    ["Godly Sprinkler"] = 5 * 60,
+    ["Master Sprinkler"] = 10 * 60,
+}
+
+local function AutoSprinkler()
+    while _G.AutoPlaceSprinker do
+        for _, sprinkler in ipairs(Player.Backpack:GetChildren()) do
+            local itemName = sprinkler:GetAttribute("ItemName")
+            if itemName and table.find(_G.SprinklerToPlace, itemName) then
+                local placePos = SprinklerToPosition[itemName]
+                local cooldown = SprinklerCooldowns[itemName] or 300
+                local lastPlaced = _G.LastPlacedTimes[itemName] or 0
+
+                if (os.time() - lastPlaced <= cooldown) then
+                    continue
+                end
+
+                if placePos and typeof(placePos) == "CFrame" then
+                    sprinkler.Parent = Player.Character
+                    if PlaceSprinler(placePos, sprinkler) then
+                        _G.LastPlacedTimes[itemName] = os.time()
+                    end
+                    task.wait(.3)
+                    sprinkler.Parent = Player.Backpack
+                end
+            end
+        end
+        task.wait(1)
+    end
+end
+
 -- Rayfield UI Controls
 Shop:CreateToggle({
 	Name = "Auto Buy Seed",
 	CurrentValue = false,
 	Flag = "ToggleAutoBuySeed",
-	Callback = function(Value) _G.AutoBuySeed = Value end
+	Callback = function(Value) _G.AutoBuy = Value _G.AutoBuySeed = Value task.spawn(AutoBuy) end
 })
 Shop:CreateDropdown({
 	Name = "Wanted Seeds",
@@ -520,7 +647,7 @@ Shop:CreateToggle({
 	Name = "Auto Buy Gear",
 	CurrentValue = false,
 	Flag = "ToggleAutoBuyGear",
-	Callback = function(Value) _G.AutoBuyGear = Value end
+	Callback = function(Value)  _G.AutoBuy = Value _G.AutoBuyGear = Value task.spawn(AutoBuy) end
 })
 Shop:CreateDropdown({
 	Name = "Wanted Gear",
@@ -534,7 +661,7 @@ Shop:CreateToggle({
 	Name = "Auto Buy Egg",
 	CurrentValue = false,
 	Flag = "ToggleAutoBuyEgg",
-	Callback = function(Value) _G.AutoBuyEgg = Value end
+	Callback = function(Value)  _G.AutoBuy = Value _G.AutoBuyEgg = Value task.spawn(AutoBuy) end
 })
 Shop:CreateDropdown({
 	Name = "Wanted Egg",
@@ -556,6 +683,14 @@ AutoTab:CreateToggle({
 		_G.Harvest = Value
 		if Value then task.spawn(StartHarvest) end
 	end
+})
+AutoTab:CreateDropdown({
+	Name = "Harvest Method",
+	Options = {"Walk and Teleport", "Teleport"},
+	MultipleOptions = false,
+	CurrentOption = {"Walk and Teleport"},
+	Flag = "HarvestMethodDD",
+	Callback = function(Selected) _G.HarvestMethod = Selected end
 })
 AutoTab:CreateDropdown({
 	Name = "Ignored Mutations",
@@ -597,6 +732,54 @@ AutoTab:CreateToggle({
 		if Value then task.spawn(AutoSell) end
 	end
 })
+local SprinklerDivier = AutoTab:CreateDivider()
+AutoTab:CreateToggle({
+	Name = "Auto Place Sprinkler",
+	CurrentValue = false,
+	Flag = "ToggleSprinkler",
+	Callback = function(Value)
+		_G.AutoPlaceSprinker = Value
+		if Value then task.spawn(AutoSprinkler) end
+	end
+})
+AutoTab:CreateDropdown({
+	Name = "Sprinkler To Place",
+	Options = {"Basic Sprinkler", "Advanced Sprinkler", "Godly Sprinkler", "Master Sprinkler"},
+	MultipleOptions = true,
+	CurrentOption = {},
+	Flag = "SprinklerToPlaceDD",
+	Callback = function(Selected) _G.SprinklerToPlace = Selected end
+})
+local function FormatPosition(pos)
+    local vector = pos.Position
+    return string.format("X: %d, Y: %d, Z: %d", math.floor(vector.X + 0.5), math.floor(vector.Y + 0.5), math.floor(vector.Z + 0.5))
+end
+local function FormatButtonName(baseName, position)
+    if position and DetermineValidity(position) then
+        return baseName .. " (Current Position: " .. FormatPosition(position) .. ")"
+    end
+    return baseName
+end
+local function CreateSprinklerButton(sprinklerName, globalVarName)
+    local button
+    local function Update()
+        button:Set(FormatButtonName("Set " .. sprinklerName .. " Position", _G[globalVarName]))
+    end
+    button = AutoTab:CreateButton({
+        Name = FormatButtonName("Set " .. sprinklerName .. " Position", _G[globalVarName]),
+        Callback = function()
+            local pos = Player.Character.HumanoidRootPart.CFrame
+            if DetermineValidity(pos) then
+                _G[globalVarName] = pos
+                Update()
+            end
+        end,
+    })
+end
+CreateSprinklerButton("Basic Sprinkler", "BSPosition")
+CreateSprinklerButton("Advanced Sprinkler", "ASPosition")
+CreateSprinklerButton("Godly Sprinkler", "GSPosition")
+CreateSprinklerButton("Master Sprinkler", "MSPosition")
 Weather:CreateToggle({
 	Name = "Stop On Weather",
 	CurrentValue = false,
