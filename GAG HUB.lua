@@ -108,7 +108,7 @@ for _, farm in workspace.Farm:GetChildren() do
 end
 SprinklerParams.FilterDescendantsInstances = include
 SprinklerParams.FilterType = Enum.RaycastFilterType.Include
-local MIN_DISTANCE = 5 
+local MIN_DISTANCE = 3
 local function IsTooCloseToOtherSprinklers(pos)
     local newPos = pos.Position
     local otherPositions = {
@@ -159,7 +159,7 @@ local function DetermineValidity(Pos)
     })
     return false
 end
-local function PlaceSprinler(Pos, Tool)
+local function PlaceSprinkler(Pos, Tool)
     if DetermineValidity(Pos) then
         local ToolData = InventoryService:GetToolData(Tool)
         if ToolData then
@@ -608,18 +608,30 @@ local function AutoSprinkler()
             if itemName and table.find(_G.SprinklerToPlace, itemName) then
                 local placePos = SprinklerToPosition[itemName]
                 local cooldown = SprinklerCooldowns[itemName] or 300
-                local lastPlaced = _G.LastPlacedTimes[itemName] or 0
 
-                if (os.time() - lastPlaced <= cooldown) then
+                local lastData = _G.LastPlacedTimes[itemName] or {time = 0, pos = nil}
+                local isSamePosition = lastData.pos and (lastData.pos == placePos)
+                
+                if isSamePosition and (os.time() - lastData.time <= cooldown) then
                     continue
                 end
 
+                Rayfield:Notify({
+                    Title = "Notification",
+                    Content = "Attempting to place "..tostring(itemName),
+                    Duration = 1.5,
+                    Image = 4483362458,
+                })
+
                 if placePos and typeof(placePos) == "CFrame" then
                     sprinkler.Parent = Player.Character
-                    if PlaceSprinler(placePos, sprinkler) then
-                        _G.LastPlacedTimes[itemName] = os.time()
+                    if PlaceSprinkler(placePos, sprinkler) then
+                        _G.LastPlacedTimes[itemName] = {
+                            time = os.time(),
+                            pos = placePos,
+                        }
                     end
-                    task.wait(.3)
+                    task.wait(0.3)
                     sprinkler.Parent = Player.Backpack
                 end
             end
